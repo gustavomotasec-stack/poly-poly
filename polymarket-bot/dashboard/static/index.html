@@ -224,6 +224,9 @@
           <input type="number" id="maxSize" value="1.0" step="0.1" min="0.1" max="1000" onchange="updateMaxSize(this.value)" />
         </div>
         <button class="btn-backtest" id="backtestBtn" onclick="runBacktest()">🔁 Rodar Backtest</button>
+        <p style="font-size:10px;color:var(--muted);line-height:1.4;margin-top:-2px">
+          Testa as estratégias em mercados passados e mostra qual teria dado lucro.
+        </p>
         <div id="backtestResult"></div>
       </div>
     </div>

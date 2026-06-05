@@ -14,6 +14,13 @@ import asyncio
 import sys
 import threading
 
+# Evita UnicodeEncodeError do rich em consoles Windows (cp1252)
+for _stream in (sys.stdout, sys.stderr):
+    try:
+        _stream.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
+
 import uvicorn
 from rich.console import Console
 from rich.panel import Panel

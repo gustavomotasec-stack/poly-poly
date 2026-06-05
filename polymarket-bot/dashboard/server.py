@@ -122,11 +122,14 @@ async def update_config(payload: dict):
 
 @app.post("/api/backtest")
 async def run_backtest(limit: int = 100):
-    """Run backtest on historical markets and return report."""
-    from simulation.backtester import Backtester
-    async with Backtester() as bt:
-        report = await bt.run(limit=limit)
-    return report
+    """Run backtest on historical markets and return report. Never raises — always JSON."""
+    try:
+        from simulation.backtester import Backtester
+        async with Backtester() as bt:
+            report = await bt.run(limit=limit)
+        return report
+    except Exception as exc:
+        return {"error": f"Falha no backtest: {exc}"}
 
 
 # --------------------------------------------------------------------------- #

@@ -56,14 +56,30 @@ function setStatus(online) {
 // ── Config (tamanho máx. por trade) ───────────
 
 async function loadConfig() {
-  let val = localStorage.getItem('maxSize');
-  try {
-    const cfg = await api('/api/config');
-    if (cfg && cfg.max_position_size != null) val = cfg.max_position_size;
-  } catch (_) {}
+  const saved = localStorage.getItem('maxSize');
+  let val = null;
+
+  if (saved != null) {
+    // Valor salvo pelo usuário é a fonte da verdade — reaplica no backend
+    // (o bot reinicia com o padrão da config, então reenviamos aqui)
+    val = parseFloat(saved);
+    try {
+      await fetch(API + '/api/config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ max_position_size: val }),
+      });
+    } catch (_) {}
+  } else {
+    try {
+      const cfg = await api('/api/config');
+      if (cfg && cfg.max_position_size != null) val = parseFloat(cfg.max_position_size);
+    } catch (_) {}
+  }
+
   if (val != null) {
     const input = document.getElementById('maxSize');
-    if (input) input.value = parseFloat(val);
+    if (input) input.value = val;
   }
 }
 
@@ -294,8 +310,12 @@ async function runBacktest() {
     if (report.error) { toast('Erro no backtest: ' + report.error, 'red'); return; }
     const el = document.getElementById('backtestResult');
     el.style.display = 'block';
+    const sourceNote = report.data_source === 'synthetic'
+      ? '<div style="font-size:10px;color:var(--yellow);margin-bottom:6px">⚠ Cenário sintético (sem dados históricos reais disponíveis)</div>'
+      : '<div style="font-size:10px;color:var(--green);margin-bottom:6px">✓ Dados históricos reais</div>';
     el.innerHTML = `
-      <div style="font-size:11px;color:var(--muted);margin-bottom:6px">Backtest (${report.total_trades} trades)</div>
+      <div style="font-size:11px;color:var(--muted);margin-bottom:6px">Backtest — ${report.total_trades} trades simulados</div>
+      ${sourceNote}
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:4px;font-size:12px">
         <span>PnL</span><span class="${report.total_pnl>=0?'pos':'neg'}">${fmt$(report.total_pnl, true)} (${report.total_pnl_pct>0?'+':''}${report.total_pnl_pct}%)</span>
         <span>Taxa de Acerto</span><span>${report.win_rate}%</span>

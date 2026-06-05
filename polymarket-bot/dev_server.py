@@ -4,9 +4,18 @@ Usado para preview/desenvolvimento sem precisar do Binance/Polymarket conectados
 """
 import asyncio
 import random
+import sys
 import time
 from datetime import datetime
 
+# Evita UnicodeEncodeError do rich em consoles Windows (cp1252)
+for _stream in (sys.stdout, sys.stderr):
+    try:
+        _stream.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
+
+import config
 import storage.db as db
 from dashboard.server import app, set_engine
 
@@ -40,7 +49,8 @@ class MockEngine:
             strategy = random.choice(strategies)
             question = random.choice(questions)
             direction = random.choice(["YES", "NO", "BOTH"])
-            size = round(random.uniform(0.3, 1.0), 3)
+            # Tamanho escala com o limite configurado (40%-100% do máximo)
+            size = round(random.uniform(0.4, 1.0) * config.MAX_POSITION_SIZE, 3)
             entry = round(random.uniform(0.35, 0.65), 3)
             won = random.random() > 0.42
             exit_p = round(entry + random.uniform(0.05, 0.25) if won else entry - random.uniform(0.05, 0.2), 3)
@@ -146,7 +156,7 @@ class MockEngine:
                 "market_id": f"live-{self._tick}",
                 "question": random.choice(questions),
                 "direction": random.choice(["YES", "NO"]),
-                "size": round(random.uniform(0.3, 1.0), 3),
+                "size": round(random.uniform(0.4, 1.0) * config.MAX_POSITION_SIZE, 3),
                 "entry_price": round(random.uniform(0.38, 0.62), 3),
                 "strategy": random.choice(strategies),
                 "pnl": pnl,
