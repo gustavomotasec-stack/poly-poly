@@ -11,6 +11,8 @@ from bot.risk_manager import RiskManager
 from bot.signal_generator import SignalGenerator
 from bot.strategies import evaluate_all_strategies
 from feeds.binance_ws import BinanceWebSocket
+from feeds.copy_trading import CopyTradingFeed
+from feeds.news_sentiment import NewsSentiment
 from feeds.polymarket_api import PolymarketAPI
 from simulation.paper_trader import PaperTrader
 
@@ -28,11 +30,16 @@ class BotEngine:
         self.signal_gen = SignalGenerator(self.binance)
         self.risk = RiskManager()
         self.paper = PaperTrader()
+        self.news = NewsSentiment()
+        self.copy_feed = CopyTradingFeed()
 
         self._active_markets: list[dict] = []
         self._last_signals: list[dict] = []
-        self._sse_queue: asyncio.Queue = asyncio.Queue(maxsize=100)
+        self._sse_queue: asyncio.Queue = asyncio.Queue(maxsize=200)
         self._last_metrics_log = 0.0
+
+        # Order deduplication: track (market_id, strategy) pairs already acted on this cycle
+        self._acted_this_cycle: set[str] = set()
 
     # ------------------------------------------------------------------ #
     # Public controls                                                      #
@@ -67,14 +74,17 @@ class BotEngine:
         self._running = True
         await self.polymarket.start()
         await self.binance.start()
+        await self.news.start()
+        await self.copy_feed.start()
 
-        console.print("[bold cyan]⚡ Polymarket Bot starting...[/bold cyan]")
+        console.print("[bold cyan]⚡ Polymarket Bot starting…[/bold cyan]")
         console.print(
             f"  Mode: [bold {'yellow' if self._simulation_mode else 'red'}]"
             f"{'SIMULATION' if self._simulation_mode else '⚠ LIVE TRADING'}[/bold]"
         )
+        console.print("  Strategies: ARB · CORR_ARB · MARKET_MAKING · MOMENTUM · COPY · MEAN_REV")
 
-        # Give Binance WS a few seconds to fill the candle buffer
+        # Let Binance WS fill the candle buffer
         await asyncio.sleep(5)
         await asyncio.gather(
             self._main_loop(),
@@ -85,6 +95,8 @@ class BotEngine:
         self._running = False
         await self.binance.stop()
         await self.polymarket.stop()
+        await self.news.stop()
+        await self.copy_feed.stop()
 
     # ------------------------------------------------------------------ #
     # Main loop                                                            #
@@ -100,81 +112,113 @@ class BotEngine:
             await asyncio.sleep(config.ENGINE_LOOP_INTERVAL)
 
     async def _tick(self):
+        self._acted_this_cycle.clear()
+
         # 1. Discover active markets
         markets = await self.polymarket.find_active_crypto_markets()
         self._active_markets = markets
-
         if not markets:
             console.print("[yellow][Engine] No active crypto markets found[/yellow]")
             return
 
         bankroll = self.paper.bankroll if self._simulation_mode else 0.0
         self.risk.reset_daily(bankroll)
-
         if self.risk.is_daily_limit_hit(bankroll):
             self._push_event("daily_limit", {"bankroll": bankroll})
             return
 
-        signals = []
-        for market in markets[:20]:  # cap to 20 per tick
-            # 2. Generate signal
-            signal = self.signal_gen.generate(market)
-            if signal["direction"] != "NEUTRAL" or True:  # log all for dashboard
-                db.save_signal(signal)
-                signals.append(signal)
+        # 2. Gather copy-trade signals
+        copy_signals = self.copy_feed.get_signals()
 
-            # 3. Check arbitrage (no signal needed)
+        signals = []
+        for market in markets[:20]:
+            # 3. Generate technical signal
+            signal = self.signal_gen.generate(market)
+
+            # News-adjust confidence
+            asset = signal.get("asset", "")
+            if asset and asset != "UNKNOWN":
+                symbol = asset.replace("USDT", "")
+                signal["confidence"] = self.news.adjust_confidence(
+                    symbol, signal["direction"], signal["confidence"]
+                )
+
+            db.save_signal(signal)
+            signals.append(signal)
+
+            # 4. Log arbitrage opportunities
             arb = self.polymarket.detect_arbitrage(market)
             if arb:
                 console.print(
-                    f"[bold green][ARB] Opportunity: {arb['question'][:50]} "
+                    f"[bold green][ARB] {arb['question'][:50]} "
                     f"profit={arb['guaranteed_profit']*100:.2f}%[/bold green]"
                 )
 
-            # 4. Run strategies
-            recommendations = evaluate_all_strategies(market, signal)
+            # 5. Evaluate all strategies
+            recommendations = evaluate_all_strategies(
+                market,
+                signal,
+                related_markets=markets,          # enables CORRELATION_ARB
+                news_sentiment=self.news,
+                copy_signals=copy_signals,
+            )
 
-            # 5. Risk filter + execute
+            # 6. Risk filter + deduplication + execute
             for rec in recommendations:
+                dedup_key = f"{market['market_id']}:{rec['strategy']}"
+                if dedup_key in self._acted_this_cycle:
+                    continue
+
                 ok, reason = self.risk.can_open_position(market["market_id"], bankroll)
                 if not ok:
-                    continue
+                    console.print(f"[dim][Risk] Skipping {rec['strategy']} — {reason}[/dim]")
+                    break
 
                 if self._simulation_mode:
                     trade = self.paper.execute(rec)
                     if trade:
-                        self.risk.register_open(market["market_id"], {
-                            "entry_price": trade.get("entry_price", 0),
-                            "size": trade.get("size", 0),
-                            "strategy": rec["strategy"],
-                        })
+                        self._acted_this_cycle.add(dedup_key)
+                        self.risk.register_open(
+                            market["market_id"],
+                            {
+                                "entry_price": trade.get("entry_price", 0),
+                                "size": trade.get("size", 0),
+                                "strategy": rec["strategy"],
+                            },
+                        )
                         self._push_event("trade_opened", trade)
                 else:
                     console.print(
-                        f"[bold red][LIVE] Would execute: {rec['strategy']} on {market['market_id'][:20]}[/bold red]"
+                        f"[bold red][LIVE] Would execute: {rec['strategy']} "
+                        f"on {market['market_id'][:20]}[/bold red]"
                     )
-                break  # Only execute one recommendation per market per tick
+                    self._acted_this_cycle.add(dedup_key)
+                break  # one recommendation per market per tick
 
         self._last_signals = signals
 
-        # 6. Auto-settle expired paper trades
+        # 7. Auto-settle expired paper trades
         if self._simulation_mode:
-            current_prices = {
-                m["market_id"]: m.get("price_yes", 0.5) for m in markets
-            }
+            current_prices = {m["market_id"]: m.get("price_yes", 0.5) for m in markets}
             pnls = self.paper.auto_settle_expired(markets, current_prices)
             for pnl in pnls:
                 self.risk.register_close("unknown", pnl)
 
-        # 7. Push update to SSE
+        # 8. Push SSE updates
         metrics = self.paper.get_metrics()
-        db.save_metrics({
-            **metrics,
-            "timestamp": datetime.utcnow().isoformat(),
-            "active_positions": metrics["open_trades"],
-        })
+        db.save_metrics(
+            {
+                **metrics,
+                "timestamp": datetime.utcnow().isoformat(),
+                "active_positions": metrics["open_trades"],
+            }
+        )
         self._push_event("metrics_update", metrics)
         self._push_event("signals_update", {"signals": signals[-10:]})
+        self._push_event(
+            "copy_signals",
+            {"signals": copy_signals[:5], "stats": self.copy_feed.get_wallet_stats()},
+        )
 
     # ------------------------------------------------------------------ #
     # Metrics logger                                                       #
@@ -206,10 +250,9 @@ class BotEngine:
     # ------------------------------------------------------------------ #
 
     def get_metrics(self) -> dict:
-        if self._simulation_mode:
-            m = self.paper.get_metrics()
-        else:
-            m = {"bankroll": 0, "total_pnl": 0, "win_rate": 0, "open_trades": 0}
+        m = self.paper.get_metrics() if self._simulation_mode else {
+            "bankroll": 0, "total_pnl": 0, "win_rate": 0, "open_trades": 0
+        }
         m["risk"] = self.risk.get_status()
         m["mode"] = "simulation" if self._simulation_mode else "live"
         m["paused"] = self._paused
@@ -220,3 +263,12 @@ class BotEngine:
 
     def get_positions(self) -> list[dict]:
         return self.risk.get_active_positions()
+
+    def get_copy_signals(self) -> list[dict]:
+        return self.copy_feed.get_signals()
+
+    def get_news_sentiment(self) -> dict:
+        return {
+            "BTC": self.news.get_sentiment("BTC"),
+            "ETH": self.news.get_sentiment("ETH"),
+        }

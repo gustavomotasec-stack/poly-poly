@@ -9,54 +9,41 @@
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
     :root {
-      --bg:       #0d1117;
-      --surface:  #161b22;
-      --border:   #30363d;
-      --text:     #e6edf3;
-      --muted:    #8b949e;
-      --green:    #3fb950;
-      --red:      #f85149;
-      --yellow:   #d29922;
-      --blue:     #58a6ff;
-      --purple:   #bc8cff;
-      --accent:   #1f6feb;
+      --bg:      #0d1117;
+      --surface: #161b22;
+      --border:  #30363d;
+      --text:    #e6edf3;
+      --muted:   #8b949e;
+      --green:   #3fb950;
+      --red:     #f85149;
+      --yellow:  #d29922;
+      --blue:    #58a6ff;
+      --purple:  #bc8cff;
+      --orange:  #fb8f44;
     }
 
     body { background: var(--bg); color: var(--text); font-family: 'Segoe UI', system-ui, sans-serif; font-size: 14px; }
 
     /* ── Header ── */
-    header {
-      display: flex; align-items: center; gap: 12px;
-      padding: 14px 24px; border-bottom: 1px solid var(--border);
-      background: var(--surface);
-    }
+    header { display: flex; align-items: center; gap: 12px; padding: 14px 24px; border-bottom: 1px solid var(--border); background: var(--surface); }
     header h1 { font-size: 18px; font-weight: 700; }
-    .badge {
-      padding: 3px 10px; border-radius: 20px; font-size: 11px; font-weight: 700;
-      text-transform: uppercase; letter-spacing: .5px;
-    }
+    .badge { padding: 3px 10px; border-radius: 20px; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .5px; }
     .badge-sim  { background: #3a2e00; color: var(--yellow); border: 1px solid var(--yellow); }
     .badge-live { background: #3d0000; color: var(--red);    border: 1px solid var(--red); }
-    .status-dot {
-      width: 9px; height: 9px; border-radius: 50%; margin-left: auto;
-      background: var(--green); box-shadow: 0 0 6px var(--green);
-      animation: pulse 2s infinite;
-    }
+    .status-dot { width: 9px; height: 9px; border-radius: 50%; margin-left: auto; background: var(--green); box-shadow: 0 0 6px var(--green); animation: pulse 2s infinite; }
     .status-dot.offline { background: var(--red); box-shadow: 0 0 6px var(--red); animation: none; }
-    @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: .4; } }
+    @keyframes pulse { 0%,100% { opacity:1; } 50% { opacity:.4; } }
     .status-label { font-size: 12px; color: var(--muted); }
 
     /* ── Layout ── */
-    .page { display: grid; grid-template-columns: 1fr 300px; gap: 16px; padding: 16px; max-width: 1400px; margin: 0 auto; }
+    .page { display: grid; grid-template-columns: 1fr 310px; gap: 16px; padding: 16px; max-width: 1440px; margin: 0 auto; }
     .main { display: flex; flex-direction: column; gap: 16px; }
+    @media (max-width: 960px) { .page { grid-template-columns: 1fr; } }
 
     /* ── Cards ── */
     .cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
-    @media (max-width: 900px) { .cards { grid-template-columns: repeat(2, 1fr); } .page { grid-template-columns: 1fr; } }
-    .card {
-      background: var(--surface); border: 1px solid var(--border); border-radius: 10px;
-      padding: 16px 18px;
-    }
+    @media (max-width: 800px) { .cards { grid-template-columns: repeat(2, 1fr); } }
+    .card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 16px 18px; }
     .card-label { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .5px; margin-bottom: 6px; }
     .card-value { font-size: 26px; font-weight: 700; }
     .card-sub   { font-size: 11px; color: var(--muted); margin-top: 4px; }
@@ -64,39 +51,47 @@
     .neg { color: var(--red); }
     .neu { color: var(--text); }
 
+    /* ── Panels ── */
+    .panel { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }
+    .panel-header { display: flex; align-items: center; justify-content: space-between; padding: 12px 16px; border-bottom: 1px solid var(--border); }
+    .panel-title  { font-size: 13px; color: var(--muted); }
+    .panel-body   { padding: 0; }
+
     /* ── Chart ── */
-    .chart-card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 16px; }
-    .chart-card h2 { font-size: 13px; color: var(--muted); margin-bottom: 12px; }
+    .chart-body { padding: 14px; }
     canvas { max-height: 200px; }
 
     /* ── Table ── */
-    .table-card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }
-    .table-card h2 { font-size: 13px; color: var(--muted); padding: 14px 16px; border-bottom: 1px solid var(--border); }
     table { width: 100%; border-collapse: collapse; }
     th { font-size: 11px; color: var(--muted); text-transform: uppercase; padding: 8px 12px; text-align: left; border-bottom: 1px solid var(--border); background: #0d1117; }
     td { padding: 9px 12px; border-bottom: 1px solid #21262d; font-size: 12px; }
     tr:last-child td { border-bottom: none; }
     tr:hover td { background: #1c2128; }
-    .pill {
-      padding: 2px 8px; border-radius: 10px; font-size: 10px; font-weight: 700;
-      text-transform: uppercase;
-    }
+
+    /* ── Pills ── */
+    .pill { padding: 2px 8px; border-radius: 10px; font-size: 10px; font-weight: 700; text-transform: uppercase; }
     .pill-yes  { background: #0e3a1c; color: var(--green); }
     .pill-no   { background: #3d0000; color: var(--red); }
     .pill-both { background: #1c2460; color: var(--blue); }
     .pill-arb  { background: #2c1a4a; color: var(--purple); }
+    .pill-corr { background: #1a2a4a; color: #79b8ff; }
+    .pill-mm   { background: #1a3a2a; color: #39d353; }
     .pill-mom  { background: #0e2a3a; color: var(--blue); }
+    .pill-copy { background: #2a1a0e; color: var(--orange); }
     .pill-rev  { background: #2a1a0e; color: var(--yellow); }
 
     /* ── Sidebar ── */
-    .sidebar { display: flex; flex-direction: column; gap: 16px; }
-    .signal-card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 14px; }
-    .signal-card h2 { font-size: 13px; color: var(--muted); margin-bottom: 12px; }
-    .signal-item { padding: 10px 0; border-bottom: 1px solid #21262d; }
+    .sidebar { display: flex; flex-direction: column; gap: 14px; }
+    .side-panel { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; }
+    .side-panel h2 { font-size: 12px; color: var(--muted); padding: 11px 14px; border-bottom: 1px solid var(--border); }
+    .side-body { padding: 0 14px; }
+
+    /* ── Signal items ── */
+    .signal-item { padding: 9px 0; border-bottom: 1px solid #21262d; }
     .signal-item:last-child { border-bottom: none; }
     .signal-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px; }
-    .signal-asset { font-weight: 700; font-size: 13px; }
-    .signal-dir { font-size: 11px; font-weight: 700; padding: 2px 7px; border-radius: 8px; }
+    .signal-asset  { font-weight: 700; font-size: 13px; }
+    .signal-dir    { font-size: 11px; font-weight: 700; padding: 2px 7px; border-radius: 8px; }
     .dir-up   { background: #0e3a1c; color: var(--green); }
     .dir-down { background: #3d0000; color: var(--red); }
     .dir-neu  { background: #21262d; color: var(--muted); }
@@ -106,35 +101,31 @@
     .signal-bar-fill  { height: 100%; border-radius: 2px; transition: width .4s; }
 
     /* ── Controls ── */
-    .controls-card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 14px; }
-    .controls-card h2 { font-size: 13px; color: var(--muted); margin-bottom: 12px; }
-    .controls-card button {
+    .controls-body { padding: 12px 14px; display: flex; flex-direction: column; gap: 10px; }
+    button {
       width: 100%; padding: 9px; border-radius: 8px; border: none; cursor: pointer;
-      font-size: 13px; font-weight: 600; margin-bottom: 8px; transition: opacity .2s;
+      font-size: 13px; font-weight: 600; transition: opacity .2s;
     }
-    .controls-card button:hover { opacity: .85; }
-    .btn-pause  { background: var(--yellow); color: #000; }
-    .btn-resume { background: var(--green);  color: #000; }
-    .btn-danger { background: var(--red);    color: #fff; }
-    .toggle-row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; font-size: 12px; }
+    button:hover { opacity: .85; }
+    button:disabled { opacity: .5; cursor: not-allowed; }
+    .btn-pause   { background: var(--yellow); color: #000; }
+    .btn-resume  { background: var(--green);  color: #000; }
+    .btn-backtest { background: #1f6feb; color: #fff; }
+    .toggle-row  { display: flex; align-items: center; justify-content: space-between; font-size: 12px; }
     .toggle { position: relative; display: inline-block; width: 36px; height: 20px; }
     .toggle input { opacity: 0; width: 0; height: 0; }
     .slider { position: absolute; cursor: pointer; inset: 0; background: #30363d; border-radius: 20px; transition: .3s; }
     .slider::before { content: ""; position: absolute; width: 14px; height: 14px; left: 3px; bottom: 3px; background: #fff; border-radius: 50%; transition: .3s; }
     input:checked + .slider { background: var(--green); }
     input:checked + .slider::before { transform: translateX(16px); }
-    label { display: block; font-size: 11px; color: var(--muted); margin-bottom: 4px; }
-    input[type=number] {
-      width: 100%; padding: 7px 10px; background: #0d1117; border: 1px solid var(--border);
-      border-radius: 6px; color: var(--text); font-size: 13px;
-    }
-    .toast {
-      position: fixed; bottom: 20px; right: 20px;
-      background: var(--surface); border: 1px solid var(--border);
-      border-radius: 8px; padding: 10px 16px; font-size: 13px;
-      opacity: 0; transform: translateY(10px); transition: all .3s;
-      pointer-events: none; z-index: 999;
-    }
+    label.field-label { display: block; font-size: 11px; color: var(--muted); margin-bottom: 3px; }
+    input[type=number] { width: 100%; padding: 7px 10px; background: #0d1117; border: 1px solid var(--border); border-radius: 6px; color: var(--text); font-size: 13px; }
+
+    /* ── Backtest result ── */
+    #backtestResult { display: none; background: #0d1117; border-radius: 8px; padding: 10px 12px; font-size: 12px; }
+
+    /* ── Toast ── */
+    .toast { position: fixed; bottom: 20px; right: 20px; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 10px 16px; font-size: 13px; opacity: 0; transform: translateY(10px); transition: all .3s; pointer-events: none; z-index: 999; }
     .toast.show { opacity: 1; transform: translateY(0); }
   </style>
 </head>
@@ -143,14 +134,16 @@
 <header>
   <h1>⚡ Polymarket Bot</h1>
   <span class="badge badge-sim" id="modeBadge">SIMULATION MODE</span>
-  <span style="margin-left:auto; display:flex; align-items:center; gap:8px;">
+  <span style="margin-left:auto;display:flex;align-items:center;gap:8px;">
     <span class="status-label" id="statusLabel">Connecting…</span>
     <span class="status-dot offline" id="statusDot"></span>
   </span>
 </header>
 
 <div class="page">
+  <!-- ── Main column ── -->
   <div class="main">
+
     <!-- Metric cards -->
     <div class="cards">
       <div class="card">
@@ -186,69 +179,91 @@
     </div>
 
     <!-- Equity chart -->
-    <div class="chart-card">
-      <h2>Equity Curve (USDC)</h2>
-      <canvas id="equityChart"></canvas>
+    <div class="panel">
+      <div class="panel-header"><span class="panel-title">Equity Curve (USDC)</span></div>
+      <div class="chart-body"><canvas id="equityChart"></canvas></div>
     </div>
 
     <!-- Trades table -->
-    <div class="table-card">
-      <h2>Recent Trades</h2>
-      <table>
-        <thead>
-          <tr>
-            <th>Time</th>
-            <th>Market</th>
-            <th>Dir</th>
-            <th>Size</th>
-            <th>Entry</th>
-            <th>Exit</th>
-            <th>PnL</th>
-            <th>Strategy</th>
-            <th>Status</th>
-          </tr>
-        </thead>
-        <tbody id="tradesBody">
-          <tr><td colspan="9" style="text-align:center;color:var(--muted);padding:24px;">Loading trades…</td></tr>
-        </tbody>
-      </table>
-    </div>
-  </div>
-
-  <!-- Sidebar -->
-  <div class="sidebar">
-    <!-- Controls -->
-    <div class="controls-card">
-      <h2>Controls</h2>
-      <button class="btn-pause" id="pauseBtn" onclick="togglePause()">⏸ Pause Bot</button>
-      <div class="toggle-row">
-        <span>Simulation Mode</span>
-        <label class="toggle">
-          <input type="checkbox" id="simToggle" checked onchange="toggleSim(this)">
-          <span class="slider"></span>
-        </label>
+    <div class="panel">
+      <div class="panel-header"><span class="panel-title">Recent Trades</span></div>
+      <div class="panel-body">
+        <table>
+          <thead>
+            <tr>
+              <th>Time</th><th>Market</th><th>Dir</th><th>Size</th>
+              <th>Entry</th><th>Exit</th><th>PnL</th><th>Strategy</th><th>Status</th>
+            </tr>
+          </thead>
+          <tbody id="tradesBody">
+            <tr><td colspan="9" style="text-align:center;color:var(--muted);padding:24px;">Loading trades…</td></tr>
+          </tbody>
+        </table>
       </div>
-      <label>Max Trade Size (USDC)</label>
-      <input type="number" id="maxSize" value="1.0" step="0.1" min="0.1" max="100"
-             onchange="updateMaxSize(this.value)" />
     </div>
 
-    <!-- Signals -->
-    <div class="signal-card">
-      <h2>Live Signals</h2>
-      <div id="signalsList"><p style="color:var(--muted);font-size:12px;">Waiting for signals…</p></div>
+  </div><!-- /main -->
+
+  <!-- ── Sidebar ── -->
+  <div class="sidebar">
+
+    <!-- Controls -->
+    <div class="side-panel">
+      <h2>Controls</h2>
+      <div class="controls-body">
+        <button class="btn-pause" id="pauseBtn" onclick="togglePause()">⏸ Pause Bot</button>
+        <div class="toggle-row">
+          <span>Simulation Mode</span>
+          <label class="toggle">
+            <input type="checkbox" id="simToggle" checked onchange="toggleSim(this)">
+            <span class="slider"></span>
+          </label>
+        </div>
+        <div>
+          <label class="field-label">Max Trade Size (USDC)</label>
+          <input type="number" id="maxSize" value="1.0" step="0.1" min="0.1" max="100" onchange="updateMaxSize(this.value)" />
+        </div>
+        <button class="btn-backtest" id="backtestBtn" onclick="runBacktest()">🔁 Run Backtest</button>
+        <div id="backtestResult"></div>
+      </div>
     </div>
 
-    <!-- Positions -->
-    <div class="signal-card">
-      <h2>Open Positions</h2>
-      <div id="positionsList"><p style="color:var(--muted);font-size:12px;">No open positions</p></div>
+    <!-- News Sentiment -->
+    <div class="side-panel">
+      <h2>📰 News Sentiment</h2>
+      <div class="side-body" id="sentimentPanel">
+        <p style="color:var(--muted);font-size:12px;padding:10px 0">Fetching news…</p>
+      </div>
     </div>
-  </div>
+
+    <!-- Live Signals -->
+    <div class="side-panel">
+      <h2>⚡ Live Signals (RSI + Momentum)</h2>
+      <div class="side-body" id="signalsList">
+        <p style="color:var(--muted);font-size:12px;padding:10px 0">Waiting for signals…</p>
+      </div>
+    </div>
+
+    <!-- Copy Trading -->
+    <div class="side-panel">
+      <h2>👥 Copy Trading</h2>
+      <div class="side-body" id="copyPanel">
+        <p style="color:var(--muted);font-size:12px;padding:10px 0">No copy signals (set COPY_TRADE_WALLETS in .env)</p>
+      </div>
+    </div>
+
+    <!-- Open Positions -->
+    <div class="side-panel">
+      <h2>📂 Open Positions</h2>
+      <div class="side-body" id="positionsList">
+        <p style="color:var(--muted);font-size:12px;padding:10px 0">No open positions</p>
+      </div>
+    </div>
+
+  </div><!-- /sidebar -->
 </div>
 
 <div class="toast" id="toast"></div>
-
 <script src="app.js"></script>
 </body>
 </html>

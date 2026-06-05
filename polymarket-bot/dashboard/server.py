@@ -21,8 +21,6 @@ app.add_middleware(
 )
 
 STATIC_DIR = Path(__file__).parent / "static"
-
-# Engine reference is injected at startup
 _engine = None
 
 
@@ -39,8 +37,7 @@ def set_engine(engine):
 async def get_metrics():
     if _engine:
         return _engine.get_metrics()
-    bankroll = 100.0
-    return db.get_metrics(bankroll)
+    return db.get_metrics(100.0)
 
 
 @app.get("/api/trades")
@@ -67,6 +64,20 @@ async def get_equity():
     return db.get_metrics_history(200)
 
 
+@app.get("/api/copy-signals")
+async def get_copy_signals():
+    if _engine:
+        return {"signals": _engine.get_copy_signals()}
+    return {"signals": []}
+
+
+@app.get("/api/news-sentiment")
+async def get_news_sentiment():
+    if _engine:
+        return _engine.get_news_sentiment()
+    return {"BTC": None, "ETH": None}
+
+
 @app.post("/api/pause")
 async def pause_bot():
     if _engine:
@@ -81,6 +92,15 @@ async def resume_bot():
     return {"status": "resumed"}
 
 
+@app.post("/api/backtest")
+async def run_backtest(limit: int = 100):
+    """Run backtest on historical markets and return report."""
+    from simulation.backtester import Backtester
+    async with Backtester() as bt:
+        report = await bt.run(limit=limit)
+    return report
+
+
 # --------------------------------------------------------------------------- #
 # SSE stream                                                                   #
 # --------------------------------------------------------------------------- #
@@ -88,10 +108,11 @@ async def resume_bot():
 @app.get("/events")
 async def sse_stream():
     async def event_generator() -> AsyncGenerator[str, None]:
-        # Send initial data on connect
         if _engine:
             metrics = _engine.get_metrics()
             yield f"data: {json.dumps({'type': 'metrics_update', 'data': metrics})}\n\n"
+            sentiment = _engine.get_news_sentiment()
+            yield f"data: {json.dumps({'type': 'sentiment_update', 'data': sentiment})}\n\n"
 
         while True:
             try:
@@ -99,7 +120,6 @@ async def sse_stream():
                     event = await asyncio.wait_for(_engine.get_sse_event(), timeout=25.0)
                     yield f"data: {json.dumps(event)}\n\n"
                 else:
-                    # Heartbeat when no engine
                     yield f"data: {json.dumps({'type': 'heartbeat', 'ts': time.time()})}\n\n"
                     await asyncio.sleep(10)
             except asyncio.TimeoutError:
@@ -110,10 +130,7 @@ async def sse_stream():
     return StreamingResponse(
         event_generator(),
         media_type="text/event-stream",
-        headers={
-            "Cache-Control": "no-cache",
-            "X-Accel-Buffering": "no",
-        },
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
 
 
