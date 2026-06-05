@@ -6,7 +6,7 @@ import asyncio
 import random
 import sys
 import time
-from datetime import datetime
+from datetime import datetime, timezone
 
 # Evita UnicodeEncodeError do rich em consoles Windows (cp1252)
 for _stream in (sys.stdout, sys.stderr):
@@ -58,7 +58,7 @@ class MockEngine:
             pnl = round(size * (exit_p / entry - 1), 4)
             self._bankroll += pnl
             db.save_trade({
-                "timestamp": datetime.utcnow().isoformat(),
+                "timestamp": datetime.now(timezone.utc).isoformat(),
                 "market_id": f"mock-market-{i}",
                 "question": question,
                 "direction": direction,
@@ -71,7 +71,7 @@ class MockEngine:
                 "status": "closed",
             })
             db.save_metrics({
-                "timestamp": datetime.utcnow().isoformat(),
+                "timestamp": datetime.now(timezone.utc).isoformat(),
                 "bankroll": self._bankroll,
                 "total_pnl": self._bankroll - 100.0,
                 "win_rate": 55.0,
@@ -200,7 +200,7 @@ class MockEngine:
         config.SIMULATION_MODE = not live
 
     async def push_live_updates(self):
-        """Simula eventos SSE em tempo real."""
+        """Simula eventos SSE com trades completos (abertos e fechados)."""
         strategies = ["ARBITRAGE", "MOMENTUM", "MARKET_MAKING", "CORRELATION_ARB"]
         questions = [
             "Will BTC be above $70,000 at 3:05 PM?",
@@ -211,32 +211,42 @@ class MockEngine:
             await asyncio.sleep(8)
             self._tick += 1
 
-            # Simula novo trade
-            pnl = round(random.uniform(-0.08, 0.12), 4)
+            # Trade com resultado completo (closed) — afeta PnL e win_rate
+            pnl        = round(random.uniform(-0.08, 0.12), 4)
+            entry      = round(random.uniform(0.38, 0.62), 3)
+            exit_price = round(entry + pnl / config.MAX_POSITION_SIZE, 3)
+            size       = round(random.uniform(0.4, 1.0) * config.MAX_POSITION_SIZE, 3)
+
             self._bankroll += pnl
+
             trade = {
-                "market_id": f"live-{self._tick}",
-                "question": random.choice(questions),
-                "direction": random.choice(["YES", "NO"]),
-                "size": round(random.uniform(0.4, 1.0) * config.MAX_POSITION_SIZE, 3),
-                "entry_price": round(random.uniform(0.38, 0.62), 3),
-                "strategy": random.choice(strategies),
-                "pnl": pnl,
-                "status": "open",
+                "market_id":   f"live-{self._tick}",
+                "question":    random.choice(questions),
+                "direction":   random.choice(["YES", "NO"]),
+                "size":        size,
+                "entry_price": entry,
+                "exit_price":  exit_price,
+                "strategy":    random.choice(strategies),
+                "pnl":         pnl,
+                "status":      "closed",   # ← closed para entrar no cálculo
+                "simulated":   True,
+                "timestamp":   datetime.now(timezone.utc).isoformat(),
             }
-            db.save_trade({**trade, "timestamp": datetime.utcnow().isoformat(),
-                           "exit_price": None, "simulated": True})
+            db.save_trade(trade)
+
+            # Calcula métricas reais do banco (sem hardcode)
+            metrics = self.get_metrics()
             db.save_metrics({
-                "timestamp": datetime.utcnow().isoformat(),
-                "bankroll": self._bankroll,
-                "total_pnl": self._bankroll - 100.0,
-                "win_rate": 57.0,
-                "active_positions": 2,
+                "timestamp":        datetime.now(timezone.utc).isoformat(),
+                "bankroll":         metrics["bankroll"],
+                "total_pnl":        metrics["total_pnl"],
+                "win_rate":         metrics["win_rate"],
+                "active_positions": metrics["open_trades"],
             })
 
             try:
-                self._sse_queue.put_nowait({"type": "trade_opened", "data": trade, "ts": time.time()})
-                self._sse_queue.put_nowait({"type": "metrics_update", "data": self.get_metrics(), "ts": time.time()})
+                self._sse_queue.put_nowait({"type": "trade_opened",   "data": trade,   "ts": time.time()})
+                self._sse_queue.put_nowait({"type": "metrics_update", "data": metrics, "ts": time.time()})
             except asyncio.QueueFull:
                 pass
 
