@@ -25,6 +25,7 @@ class MockEngine:
 
     def __init__(self):
         self._bankroll = 100.0
+        self._initial  = 100.0    # necessário para cálculo de métricas
         self._trades = []
         self._signals = []
         self._paused = False
@@ -90,30 +91,56 @@ class MockEngine:
         return await self._sse_queue.get()
 
     def get_metrics(self):
-        pnl = round(self._bankroll - 100.0, 4)
+        # Calcula tudo dinamicamente a partir do SQLite — sem hardcode
+        trades = db.get_trades(limit=500)
+        closed = [t for t in trades if t.get("status") == "closed" and t.get("pnl") is not None]
+        wins   = [t for t in closed if t["pnl"] > 0]
+        pnls   = [t["pnl"] for t in closed]
+
+        win_rate      = round(len(wins) / len(closed) * 100, 1) if closed else 0.0
+        total_pnl     = round(sum(pnls), 4)
+        avg_trade_pnl = round(total_pnl / len(pnls), 4) if pnls else 0.0
+
+        # Sharpe simplificado
+        import math
+        sharpe = 0.0
+        if len(pnls) > 1:
+            avg = sum(pnls) / len(pnls)
+            std = math.sqrt(sum((p - avg) ** 2 for p in pnls) / len(pnls))
+            sharpe = round((avg / std * math.sqrt(252)), 3) if std > 0 else 0.0
+
+        # Max drawdown
+        peak, running, max_dd = self._initial, self._initial, 0.0
+        for t in closed:
+            running += t["pnl"]
+            peak = max(peak, running)
+            dd = (peak - running) / peak if peak > 0 else 0
+            max_dd = max(max_dd, dd)
+
+        from datetime import date
+        today = date.today().isoformat()
+        today_trades = sum(1 for t in trades if t.get("timestamp", "").startswith(today))
+
         return {
-            "bankroll": round(self._bankroll, 2),
-            "initial_bankroll": 100.0,
-            "total_pnl": pnl,
-            "total_pnl_pct": round(pnl, 2),
-            "win_rate": 57.3,
-            "total_trades": 20 + self._tick,
-            "open_trades": random.randint(0, 3),
-            "sharpe_ratio": 1.42,
-            "max_drawdown_pct": 4.8,
-            "avg_trade_pnl": 0.0023,
-            "today_trades": 8 + self._tick,
-            "risk": {"in_cooldown": False, "consecutive_losses": 0},
-            "mode": "simulation",
+            "bankroll":         round(self._bankroll, 2),
+            "initial_bankroll": self._initial,
+            "total_pnl":        total_pnl,
+            "total_pnl_pct":    round(total_pnl / self._initial * 100, 2) if self._initial else 0,
+            "win_rate":         win_rate,
+            "total_trades":     len(closed),
+            "open_trades":      len([t for t in trades if t.get("status") == "open"]),
+            "sharpe_ratio":     sharpe,
+            "max_drawdown_pct": round(max_dd * 100, 2),
+            "avg_trade_pnl":    avg_trade_pnl,
+            "today_trades":     today_trades,
+            "risk":  {"in_cooldown": False, "consecutive_losses": 0},
+            "mode":  "simulation",
             "paused": self._paused,
         }
 
     def get_signals(self):
-        return [
-            {"asset": "BTCUSDT", "direction": "UP",   "confidence": 0.71, "rsi": 28.4, "momentum":  0.23, "indicators": {"rsi": 28.4}},
-            {"asset": "ETHUSDT", "direction": "DOWN",  "confidence": 0.63, "rsi": 72.1, "momentum": -0.18, "indicators": {"rsi": 72.1}},
-            {"asset": "BTCUSDT", "direction": "NEUTRAL","confidence": 0.35, "rsi": 51.0, "momentum":  0.02, "indicators": {"rsi": 51.0}},
-        ]
+        # Lê os últimos sinais reais do SQLite
+        return db.get_recent_signals(limit=10)
 
     def get_positions(self):
         return [
