@@ -12,6 +12,7 @@ const MAX_EQUITY_POINTS = 120;
 
 window.addEventListener('DOMContentLoaded', () => {
   initChart();
+  loadConfig();
   connectSSE();
   fetchAll();
   setInterval(fetchAll, 15000);
@@ -41,7 +42,7 @@ function connectSSE() {
       if (type === 'sentiment_update') renderSentiment(data);
       if (type === 'copy_signals')     renderCopySignals(data.signals || []);
       if (type === 'trade_opened')     { fetchTrades(); fetchPositions(); toast(`Trade: ${data.strategy}`, 'green'); }
-      if (type === 'daily_limit')      toast('⚠ Daily loss limit hit!', 'red');
+      if (type === 'daily_limit')      toast('⚠ Limite de perda diária atingido!', 'red');
       if (type === 'heartbeat')        setStatus(true);
     } catch (_) {}
   };
@@ -50,6 +51,20 @@ function connectSSE() {
 function setStatus(online) {
   document.getElementById('statusDot').className = 'status-dot' + (online ? '' : ' offline');
   document.getElementById('statusLabel').textContent = online ? 'Online' : 'Offline';
+}
+
+// ── Config (tamanho máx. por trade) ───────────
+
+async function loadConfig() {
+  let val = localStorage.getItem('maxSize');
+  try {
+    const cfg = await api('/api/config');
+    if (cfg && cfg.max_position_size != null) val = cfg.max_position_size;
+  } catch (_) {}
+  if (val != null) {
+    const input = document.getElementById('maxSize');
+    if (input) input.value = parseFloat(val);
+  }
 }
 
 // ── Metrics ───────────────────────────────────
@@ -63,7 +78,7 @@ function applyMetrics(d) {
   setValColor('mPnl', fmt$(d.total_pnl, true), d.total_pnl);
   setText('mPnlPct', `${d.total_pnl_pct ?? '—'}%`);
   setText('mWinRate', `${d.win_rate ?? '—'}%`);
-  setText('mTrades', `${d.total_trades ?? 0} total trades`);
+  setText('mTrades', `${d.total_trades ?? 0} trades no total`);
   setValColor('mDrawdown', `${d.max_drawdown_pct ?? '—'}%`, -(d.max_drawdown_pct ?? 0));
   setText('mSharpe', `Sharpe: ${d.sharpe_ratio ?? '—'}`);
   setText('mToday', d.today_trades ?? '—');
@@ -75,7 +90,7 @@ function applyMetrics(d) {
   if (risk.consecutive_losses > 0) parts.push(`${risk.consecutive_losses} losses`);
   setText('mRiskStatus', parts.join(' · ') || 'Normal');
   const badge = document.getElementById('modeBadge');
-  if (d.mode === 'live') { badge.textContent = '⚠ LIVE'; badge.className = 'badge badge-live'; }
+  if (d.mode === 'live') { badge.textContent = '⚠ MODO REAL'; badge.className = 'badge badge-live'; }
   paused = d.paused;
   syncPauseBtn();
 }
@@ -128,7 +143,7 @@ async function fetchTrades() {
 function renderTrades(trades) {
   const tbody = document.getElementById('tradesBody');
   if (!trades.length) {
-    tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;color:var(--muted);padding:24px;">No trades yet</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;color:var(--muted);padding:24px;">Nenhum trade ainda</td></tr>';
     return;
   }
   tbody.innerHTML = trades.map(t => {
@@ -173,7 +188,7 @@ async function fetchSignals() {
 
 function renderSignals(signals) {
   const el = document.getElementById('signalsList');
-  if (!signals || !signals.length) { el.innerHTML = '<p style="color:var(--muted);font-size:12px;">Waiting…</p>'; return; }
+  if (!signals || !signals.length) { el.innerHTML = '<p style="color:var(--muted);font-size:12px;">Aguardando…</p>'; return; }
   el.innerHTML = signals.slice(0, 8).map(s => {
     const dirCls = s.direction === 'UP' ? 'dir-up' : s.direction === 'DOWN' ? 'dir-down' : 'dir-neu';
     const conf = Math.round((s.confidence || 0) * 100);
@@ -204,22 +219,23 @@ async function fetchSentiment() {
 function renderSentiment(data) {
   const el = document.getElementById('sentimentPanel');
   if (!el) return;
-  if (!data || (!data.BTC && !data.ETH)) { el.innerHTML = '<p style="color:var(--muted);font-size:12px;">Fetching news…</p>'; return; }
+  if (!data || (!data.BTC && !data.ETH)) { el.innerHTML = '<p style="color:var(--muted);font-size:12px;">Buscando notícias…</p>'; return; }
   el.innerHTML = ['BTC','ETH'].map(asset => {
     const s = data[asset];
     if (!s) return '';
     const color = s.direction === 'BULLISH' ? 'var(--green)' : s.direction === 'BEARISH' ? 'var(--red)' : 'var(--muted)';
+    const dirPt = s.direction === 'BULLISH' ? 'OTIMISTA' : s.direction === 'BEARISH' ? 'PESSIMISTA' : 'NEUTRO';
     const bar = Math.round((s.score + 1) / 2 * 100);
     return `<div class="signal-item">
       <div class="signal-header">
         <span class="signal-asset">${asset}</span>
-        <span style="font-size:11px;font-weight:700;color:${color}">${s.direction}</span>
+        <span style="font-size:11px;font-weight:700;color:${color}">${dirPt}</span>
       </div>
       <div class="signal-bar-row">
         <span style="width:55px">Score ${s.score > 0 ? '+' : ''}${s.score.toFixed(2)}</span>
         <div class="signal-bar-track"><div class="signal-bar-fill" style="width:${bar}%;background:${color}"></div></div>
       </div>
-      <div style="font-size:10px;color:var(--muted);margin-top:3px">${s.age_seconds}s ago</div>
+      <div style="font-size:10px;color:var(--muted);margin-top:3px">há ${s.age_seconds}s</div>
     </div>`;
   }).join('');
 }
@@ -236,7 +252,7 @@ async function fetchCopySignals() {
 function renderCopySignals(signals) {
   const el = document.getElementById('copyPanel');
   if (!el) return;
-  if (!signals.length) { el.innerHTML = '<p style="color:var(--muted);font-size:12px;">No copy signals (set COPY_TRADE_WALLETS in .env)</p>'; return; }
+  if (!signals.length) { el.innerHTML = '<p style="color:var(--muted);font-size:12px;">Sem sinais de cópia (defina COPY_TRADE_WALLETS no .env)</p>'; return; }
   el.innerHTML = signals.slice(0, 5).map(s => `
     <div class="signal-item">
       <div class="signal-header">
@@ -256,14 +272,14 @@ async function fetchPositions() {
 
 function renderPositions(positions) {
   const el = document.getElementById('positionsList');
-  if (!positions || !positions.length) { el.innerHTML = '<p style="color:var(--muted);font-size:12px;">No open positions</p>'; return; }
+  if (!positions || !positions.length) { el.innerHTML = '<p style="color:var(--muted);font-size:12px;">Sem posições abertas</p>'; return; }
   el.innerHTML = positions.map(p => `
     <div class="signal-item">
       <div class="signal-header">
         <span style="font-size:11px;flex:1">${p.strategy||'?'}</span>
         <span style="color:var(--blue);font-size:11px">$${(p.size||0).toFixed(3)}</span>
       </div>
-      <div style="font-size:10px;color:var(--muted)">Entry: ${(p.entry_price||0).toFixed(4)}</div>
+      <div style="font-size:10px;color:var(--muted)">Entrada: ${(p.entry_price||0).toFixed(4)}</div>
     </div>`).join('');
 }
 
@@ -271,51 +287,68 @@ function renderPositions(positions) {
 
 async function runBacktest() {
   const btn = document.getElementById('backtestBtn');
-  btn.textContent = '⏳ Running…';
+  btn.textContent = '⏳ Rodando…';
   btn.disabled = true;
   try {
     const report = await fetch(API + '/api/backtest?limit=100', { method: 'POST' }).then(r => r.json());
-    if (report.error) { toast('Backtest error: ' + report.error, 'red'); return; }
+    if (report.error) { toast('Erro no backtest: ' + report.error, 'red'); return; }
     const el = document.getElementById('backtestResult');
     el.style.display = 'block';
     el.innerHTML = `
       <div style="font-size:11px;color:var(--muted);margin-bottom:6px">Backtest (${report.total_trades} trades)</div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:4px;font-size:12px">
         <span>PnL</span><span class="${report.total_pnl>=0?'pos':'neg'}">${fmt$(report.total_pnl, true)} (${report.total_pnl_pct>0?'+':''}${report.total_pnl_pct}%)</span>
-        <span>Win Rate</span><span>${report.win_rate}%</span>
-        <span>Max DD</span><span class="neg">${report.max_drawdown_pct}%</span>
-        ${Object.entries(report.per_strategy||{}).map(([k,v])=>`<span>${k.replace(/_/g,' ')}</span><span class="${v.total_pnl>=0?'pos':'neg'}">${v.win_rate}% WR · ${fmt$(v.total_pnl,true)}</span>`).join('')}
+        <span>Taxa de Acerto</span><span>${report.win_rate}%</span>
+        <span>Drawdown Máx.</span><span class="neg">${report.max_drawdown_pct}%</span>
+        ${Object.entries(report.per_strategy||{}).map(([k,v])=>`<span>${k.replace(/_/g,' ')}</span><span class="${v.total_pnl>=0?'pos':'neg'}">${v.win_rate}% acerto · ${fmt$(v.total_pnl,true)}</span>`).join('')}
       </div>`;
-    toast('Backtest complete!', 'green');
-  } catch(e) { toast('Could not reach bot API', 'red'); }
-  finally { btn.textContent = '🔁 Run Backtest'; btn.disabled = false; }
+    toast('Backtest concluído!', 'green');
+  } catch(e) { toast('Não foi possível alcançar a API do bot', 'red'); }
+  finally { btn.textContent = '🔁 Rodar Backtest'; btn.disabled = false; }
 }
 
-// ── Controls ──────────────────────────────────
+// ── Controles ─────────────────────────────────
 
 function syncPauseBtn() {
   const btn = document.getElementById('pauseBtn');
-  if (paused) { btn.textContent = '▶ Resume Bot'; btn.className = 'btn-resume'; }
-  else        { btn.textContent = '⏸ Pause Bot';  btn.className = 'btn-pause'; }
+  if (paused) { btn.textContent = '▶ Retomar Bot'; btn.className = 'btn-resume'; }
+  else        { btn.textContent = '⏸ Pausar Bot';  btn.className = 'btn-pause'; }
 }
 
 async function togglePause() {
   const ep = paused ? '/api/resume' : '/api/pause';
-  try { await fetch(API + ep, { method: 'POST' }); paused = !paused; syncPauseBtn(); toast(paused ? 'Bot paused' : 'Bot resumed', paused ? 'yellow' : 'green'); }
-  catch(e) { toast('Error contacting bot', 'red'); }
+  try { await fetch(API + ep, { method: 'POST' }); paused = !paused; syncPauseBtn(); toast(paused ? 'Bot pausado' : 'Bot retomado', paused ? 'yellow' : 'green'); }
+  catch(e) { toast('Erro ao contatar o bot', 'red'); }
 }
 
 function toggleSim(checkbox) {
   if (!checkbox.checked) {
-    if (!confirm('⚠ Disable Simulation Mode?\n\nThis will trade with REAL money.\nRestart bot with --live flag.\n\nContinue?')) {
+    if (!confirm('⚠ Desativar o Modo Simulação?\n\nIsso fará trades com DINHEIRO REAL.\nReinicie o bot com a flag --live.\n\nDeseja continuar?')) {
       checkbox.checked = true;
-    } else { toast('Restart with --live to use real funds', 'red'); }
+    } else { toast('Reinicie com --live para usar fundos reais', 'red'); }
   }
 }
 
-function updateMaxSize(val) {
+async function updateMaxSize(val) {
   const v = parseFloat(val);
-  if (!isNaN(v) && v > 0) toast(`Max size $${v.toFixed(2)} (restart to apply)`, 'blue');
+  if (isNaN(v) || v <= 0) { toast('Valor inválido', 'red'); return; }
+  try {
+    const res = await fetch(API + '/api/config', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ max_position_size: v }),
+    });
+    const data = await res.json();
+    const applied = parseFloat(data.max_position_size);
+    localStorage.setItem('maxSize', applied);
+    const input = document.getElementById('maxSize');
+    if (input) input.value = applied;
+    toast(`Tamanho máx. atualizado para $${applied.toFixed(2)}`, 'green');
+  } catch (e) {
+    // Backend offline — persiste localmente mesmo assim
+    localStorage.setItem('maxSize', v);
+    toast(`Tamanho máx. salvo: $${v.toFixed(2)}`, 'blue');
+  }
 }
 
 // ── Helpers ───────────────────────────────────

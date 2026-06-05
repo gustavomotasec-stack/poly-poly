@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="pt-BR">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -133,70 +133,70 @@
 
 <header>
   <h1>⚡ Polymarket Bot</h1>
-  <span class="badge badge-sim" id="modeBadge">SIMULATION MODE</span>
+  <span class="badge badge-sim" id="modeBadge">MODO SIMULAÇÃO</span>
   <span style="margin-left:auto;display:flex;align-items:center;gap:8px;">
-    <span class="status-label" id="statusLabel">Connecting…</span>
+    <span class="status-label" id="statusLabel">Conectando…</span>
     <span class="status-dot offline" id="statusDot"></span>
   </span>
 </header>
 
 <div class="page">
-  <!-- ── Main column ── -->
+  <!-- ── Coluna principal ── -->
   <div class="main">
 
-    <!-- Metric cards -->
+    <!-- Cards de métricas -->
     <div class="cards">
       <div class="card">
-        <div class="card-label">💰 Bankroll</div>
+        <div class="card-label">💰 Banca</div>
         <div class="card-value" id="mBankroll">—</div>
-        <div class="card-sub">Initial: $100.00</div>
+        <div class="card-sub">Inicial: $100.00</div>
       </div>
       <div class="card">
-        <div class="card-label">📈 Total PnL</div>
+        <div class="card-label">📈 Lucro Total (PnL)</div>
         <div class="card-value" id="mPnl">—</div>
         <div class="card-sub" id="mPnlPct">—</div>
       </div>
       <div class="card">
-        <div class="card-label">🎯 Win Rate</div>
+        <div class="card-label">🎯 Taxa de Acerto</div>
         <div class="card-value" id="mWinRate">—</div>
         <div class="card-sub" id="mTrades">0 trades</div>
       </div>
       <div class="card">
-        <div class="card-label">📉 Max Drawdown</div>
+        <div class="card-label">📉 Drawdown Máx.</div>
         <div class="card-value" id="mDrawdown">—</div>
         <div class="card-sub" id="mSharpe">Sharpe: —</div>
       </div>
       <div class="card">
-        <div class="card-label">🔄 Trades Today</div>
+        <div class="card-label">🔄 Trades Hoje</div>
         <div class="card-value" id="mToday">—</div>
-        <div class="card-sub">Avg PnL: <span id="mAvgPnl">—</span></div>
+        <div class="card-sub">PnL Médio: <span id="mAvgPnl">—</span></div>
       </div>
       <div class="card">
-        <div class="card-label">⚡ Open Positions</div>
+        <div class="card-label">⚡ Posições Abertas</div>
         <div class="card-value" id="mPositions">—</div>
         <div class="card-sub" id="mRiskStatus">—</div>
       </div>
     </div>
 
-    <!-- Equity chart -->
+    <!-- Curva de capital -->
     <div class="panel">
-      <div class="panel-header"><span class="panel-title">Equity Curve (USDC)</span></div>
+      <div class="panel-header"><span class="panel-title">Curva de Capital (USDC)</span></div>
       <div class="chart-body"><canvas id="equityChart"></canvas></div>
     </div>
 
-    <!-- Trades table -->
+    <!-- Tabela de trades -->
     <div class="panel">
-      <div class="panel-header"><span class="panel-title">Recent Trades</span></div>
+      <div class="panel-header"><span class="panel-title">Trades Recentes</span></div>
       <div class="panel-body">
         <table>
           <thead>
             <tr>
-              <th>Time</th><th>Market</th><th>Dir</th><th>Size</th>
-              <th>Entry</th><th>Exit</th><th>PnL</th><th>Strategy</th><th>Status</th>
+              <th>Hora</th><th>Mercado</th><th>Dir</th><th>Tam.</th>
+              <th>Entrada</th><th>Saída</th><th>PnL</th><th>Estratégia</th><th>Status</th>
             </tr>
           </thead>
           <tbody id="tradesBody">
-            <tr><td colspan="9" style="text-align:center;color:var(--muted);padding:24px;">Loading trades…</td></tr>
+            <tr><td colspan="9" style="text-align:center;color:var(--muted);padding:24px;">Carregando trades…</td></tr>
           </tbody>
         </table>
       </div>
@@ -204,43 +204,43 @@
 
   </div><!-- /main -->
 
-  <!-- ── Sidebar ── -->
+  <!-- ── Barra lateral ── -->
   <div class="sidebar">
 
-    <!-- Controls -->
+    <!-- Controles -->
     <div class="side-panel">
-      <h2>Controls</h2>
+      <h2>Controles</h2>
       <div class="controls-body">
-        <button class="btn-pause" id="pauseBtn" onclick="togglePause()">⏸ Pause Bot</button>
+        <button class="btn-pause" id="pauseBtn" onclick="togglePause()">⏸ Pausar Bot</button>
         <div class="toggle-row">
-          <span>Simulation Mode</span>
+          <span>Modo Simulação</span>
           <label class="toggle">
             <input type="checkbox" id="simToggle" checked onchange="toggleSim(this)">
             <span class="slider"></span>
           </label>
         </div>
         <div>
-          <label class="field-label">Max Trade Size (USDC)</label>
-          <input type="number" id="maxSize" value="1.0" step="0.1" min="0.1" max="100" onchange="updateMaxSize(this.value)" />
+          <label class="field-label">Tamanho Máx. por Trade (USDC)</label>
+          <input type="number" id="maxSize" value="1.0" step="0.1" min="0.1" max="1000" onchange="updateMaxSize(this.value)" />
         </div>
-        <button class="btn-backtest" id="backtestBtn" onclick="runBacktest()">🔁 Run Backtest</button>
+        <button class="btn-backtest" id="backtestBtn" onclick="runBacktest()">🔁 Rodar Backtest</button>
         <div id="backtestResult"></div>
       </div>
     </div>
 
-    <!-- News Sentiment -->
+    <!-- Sentimento de Notícias -->
     <div class="side-panel">
-      <h2>📰 News Sentiment</h2>
+      <h2>📰 Sentimento de Notícias</h2>
       <div class="side-body" id="sentimentPanel">
-        <p style="color:var(--muted);font-size:12px;padding:10px 0">Fetching news…</p>
+        <p style="color:var(--muted);font-size:12px;padding:10px 0">Buscando notícias…</p>
       </div>
     </div>
 
-    <!-- Live Signals -->
+    <!-- Sinais ao Vivo -->
     <div class="side-panel">
-      <h2>⚡ Live Signals (RSI + Momentum)</h2>
+      <h2>⚡ Sinais ao Vivo (RSI + Momentum)</h2>
       <div class="side-body" id="signalsList">
-        <p style="color:var(--muted);font-size:12px;padding:10px 0">Waiting for signals…</p>
+        <p style="color:var(--muted);font-size:12px;padding:10px 0">Aguardando sinais…</p>
       </div>
     </div>
 
@@ -248,15 +248,15 @@
     <div class="side-panel">
       <h2>👥 Copy Trading</h2>
       <div class="side-body" id="copyPanel">
-        <p style="color:var(--muted);font-size:12px;padding:10px 0">No copy signals (set COPY_TRADE_WALLETS in .env)</p>
+        <p style="color:var(--muted);font-size:12px;padding:10px 0">Sem sinais de cópia (defina COPY_TRADE_WALLETS no .env)</p>
       </div>
     </div>
 
-    <!-- Open Positions -->
+    <!-- Posições Abertas -->
     <div class="side-panel">
-      <h2>📂 Open Positions</h2>
+      <h2>📂 Posições Abertas</h2>
       <div class="side-body" id="positionsList">
-        <p style="color:var(--muted);font-size:12px;padding:10px 0">No open positions</p>
+        <p style="color:var(--muted);font-size:12px;padding:10px 0">Sem posições abertas</p>
       </div>
     </div>
 

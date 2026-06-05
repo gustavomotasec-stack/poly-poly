@@ -9,6 +9,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import StreamingResponse, FileResponse
 from pathlib import Path
 
+import config
 import storage.db as db
 
 app = FastAPI(title="Polymarket Bot Dashboard", docs_url=None, redoc_url=None)
@@ -90,6 +91,33 @@ async def resume_bot():
     if _engine:
         _engine.resume()
     return {"status": "resumed"}
+
+
+@app.get("/api/config")
+async def get_config():
+    """Return live-editable runtime configuration."""
+    return {
+        "max_position_size": config.MAX_POSITION_SIZE,
+        "max_simultaneous_positions": config.MAX_SIMULTANEOUS_POSITIONS,
+        "stop_loss_pct": config.STOP_LOSS_PCT,
+        "min_edge": config.MIN_EDGE,
+    }
+
+
+@app.post("/api/config")
+async def update_config(payload: dict):
+    """Update runtime config (applied live, no restart needed)."""
+    if "max_position_size" in payload:
+        try:
+            val = float(payload["max_position_size"])
+            if 0 < val <= 1000:
+                config.MAX_POSITION_SIZE = val
+        except (TypeError, ValueError):
+            pass
+    return {
+        "max_position_size": config.MAX_POSITION_SIZE,
+        "status": "updated",
+    }
 
 
 @app.post("/api/backtest")
