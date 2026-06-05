@@ -1,9 +1,13 @@
+"""
+Dashboard FastAPI.
+Melhorias: toggle simulação↔live (4), kill switch (5), health check (9).
+"""
 import asyncio
 import json
 import time
 from typing import AsyncGenerator
 
-from fastapi import FastAPI, Response
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import StreamingResponse, FileResponse
@@ -30,9 +34,7 @@ def set_engine(engine):
     _engine = engine
 
 
-# --------------------------------------------------------------------------- #
-# REST endpoints                                                               #
-# --------------------------------------------------------------------------- #
+# ── Métricas ──────────────────────────────────────────────────────────────
 
 @app.get("/api/metrics")
 async def get_metrics():
@@ -79,6 +81,8 @@ async def get_news_sentiment():
     return {"BTC": None, "ETH": None}
 
 
+# ── Controles ─────────────────────────────────────────────────────────────
+
 @app.post("/api/pause")
 async def pause_bot():
     if _engine:
@@ -93,20 +97,102 @@ async def resume_bot():
     return {"status": "resumed"}
 
 
+# ── Melhoria 4: toggle simulação ↔ live ──────────────────────────────────
+
+@app.post("/api/mode/toggle")
+async def toggle_mode(payload: dict):
+    """
+    Alterna entre modo simulação e live.
+    Requer confirmação obrigatória no payload:
+      {"target": "live", "confirmation": "CONFIRMAR"}   ← para ativar live
+      {"target": "simulation"}                          ← para voltar a sim
+    """
+    target = payload.get("target", "simulation")
+    confirmation = payload.get("confirmation", "")
+
+    if target == "live":
+        if confirmation != config.LIVE_MODE_PASSWORD:
+            raise HTTPException(
+                status_code=403,
+                detail=f"Confirmação incorreta. Digite '{config.LIVE_MODE_PASSWORD}' para ativar.",
+            )
+        if not config.POLYMARKET_PK:
+            raise HTTPException(
+                status_code=400,
+                detail="POLYMARKET_PK não configurada. Defina a variável de ambiente antes de ativar o modo live.",
+            )
+
+    if _engine:
+        _engine.switch_mode(live=(target == "live"))
+    else:
+        config.SIMULATION_MODE = (target != "live")
+
+    return {
+        "mode": target,
+        "simulation": config.SIMULATION_MODE,
+        "status": "ok",
+    }
+
+
+@app.get("/api/mode")
+async def get_mode():
+    return {
+        "simulation": config.SIMULATION_MODE,
+        "mode": "simulation" if config.SIMULATION_MODE else "live",
+        "live_password_set": bool(config.LIVE_MODE_PASSWORD),
+        "pk_configured": bool(config.POLYMARKET_PK),
+    }
+
+
+# ── Melhoria 5: kill switch ───────────────────────────────────────────────
+
+@app.post("/api/kill-switch")
+async def trigger_kill_switch(payload: dict | None = None):
+    """Fecha todas as posições abertas imediatamente."""
+    if _engine:
+        result = await _engine.emergency_stop()
+        return result
+    return {"closed_positions": 0, "reason": "Engine não iniciada"}
+
+
+@app.post("/api/kill-switch/reset")
+async def reset_kill_switch():
+    """Reseta o kill switch (permite retomar trading)."""
+    if _engine:
+        _engine.risk.reset_kill_switch()
+    return {"status": "reset"}
+
+
+# ── Melhoria 9: health check ──────────────────────────────────────────────
+
+@app.get("/api/health")
+async def get_health():
+    if _engine:
+        return _engine.get_health()
+    return {
+        "status": "no_engine",
+        "last_tick_at": None,
+        "last_signal_at": None,
+        "binance_ws": {"connected": False},
+    }
+
+
+# ── Config ────────────────────────────────────────────────────────────────
+
 @app.get("/api/config")
 async def get_config():
-    """Return live-editable runtime configuration."""
     return {
         "max_position_size": config.MAX_POSITION_SIZE,
         "max_simultaneous_positions": config.MAX_SIMULTANEOUS_POSITIONS,
         "stop_loss_pct": config.STOP_LOSS_PCT,
         "min_edge": config.MIN_EDGE,
+        "minimum_balance_usdc": config.MINIMUM_BALANCE_USDC,
+        "circuit_breaker_errors": config.CIRCUIT_BREAKER_API_ERRORS,
     }
 
 
 @app.post("/api/config")
 async def update_config(payload: dict):
-    """Update runtime config (applied live, no restart needed)."""
     if "max_position_size" in payload:
         try:
             val = float(payload["max_position_size"])
@@ -114,15 +200,20 @@ async def update_config(payload: dict):
                 config.MAX_POSITION_SIZE = val
         except (TypeError, ValueError):
             pass
-    return {
-        "max_position_size": config.MAX_POSITION_SIZE,
-        "status": "updated",
-    }
+    if "minimum_balance_usdc" in payload:
+        try:
+            val = float(payload["minimum_balance_usdc"])
+            if val >= 0:
+                config.MINIMUM_BALANCE_USDC = val
+        except (TypeError, ValueError):
+            pass
+    return {"status": "updated", "max_position_size": config.MAX_POSITION_SIZE}
 
+
+# ── Backtest ──────────────────────────────────────────────────────────────
 
 @app.post("/api/backtest")
 async def run_backtest(limit: int = 100):
-    """Run backtest on historical markets and return report. Never raises — always JSON."""
     try:
         from simulation.backtester import Backtester
         async with Backtester() as bt:
@@ -132,18 +223,15 @@ async def run_backtest(limit: int = 100):
         return {"error": f"Falha no backtest: {exc}"}
 
 
-# --------------------------------------------------------------------------- #
-# SSE stream                                                                   #
-# --------------------------------------------------------------------------- #
+# ── SSE ───────────────────────────────────────────────────────────────────
 
 @app.get("/events")
 async def sse_stream():
     async def event_generator() -> AsyncGenerator[str, None]:
         if _engine:
-            metrics = _engine.get_metrics()
-            yield f"data: {json.dumps({'type': 'metrics_update', 'data': metrics})}\n\n"
-            sentiment = _engine.get_news_sentiment()
-            yield f"data: {json.dumps({'type': 'sentiment_update', 'data': sentiment})}\n\n"
+            yield f"data: {json.dumps({'type': 'metrics_update', 'data': _engine.get_metrics()})}\n\n"
+            yield f"data: {json.dumps({'type': 'sentiment_update', 'data': _engine.get_news_sentiment()})}\n\n"
+            yield f"data: {json.dumps({'type': 'health_update', 'data': _engine.get_health()})}\n\n"
 
         while True:
             try:
@@ -165,9 +253,7 @@ async def sse_stream():
     )
 
 
-# --------------------------------------------------------------------------- #
-# Static files                                                                 #
-# --------------------------------------------------------------------------- #
+# ── Estáticos ─────────────────────────────────────────────────────────────
 
 @app.get("/")
 async def serve_index():

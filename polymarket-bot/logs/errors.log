@@ -1,0 +1,8 @@
+{"ts": "2026-06-05T19:29:55.544994", "level": "ERROR", "logger": "bot.errors", "msg": "test error", "module": "test"}
+{"ts": "2026-06-05T19:29:55.595974", "level": "WARNING", "logger": "bot.errors", "msg": "[CircuitBreaker] Erro de API #1: error 0"}
+{"ts": "2026-06-05T19:29:55.596740", "level": "WARNING", "logger": "bot.errors", "msg": "[CircuitBreaker] Erro de API #2: error 1"}
+{"ts": "2026-06-05T19:29:55.597403", "level": "WARNING", "logger": "bot.errors", "msg": "[CircuitBreaker] Erro de API #3: error 2"}
+{"ts": "2026-06-05T19:29:55.598012", "level": "WARNING", "logger": "bot.errors", "msg": "[CircuitBreaker] Erro de API #4: error 3"}
+{"ts": "2026-06-05T19:29:55.598632", "level": "WARNING", "logger": "bot.errors", "msg": "[CircuitBreaker] Erro de API #5: error 4"}
+{"ts": "2026-06-05T19:29:55.599747", "level": "ERROR", "logger": "bot.errors", "msg": "[CircuitBreaker] ABERTO após 5 erros. Cooldown 5 min."}
+{"ts": "2026-06-05T19:29:55.601411", "level": "ERROR", "logger": "bot.errors", "msg": "[KillSwitch] ACIONADO — Saldo $5.00 abaixo do mínimo $10.00", "bankroll": 5.0, "reason": "Saldo $5.00 abaixo do mínimo $10.00"}

@@ -137,6 +137,41 @@ class MockEngine:
                     "age_seconds": 60},
         }
 
+    def get_health(self):
+        import time
+        return {
+            "last_tick_at": time.time() - 5,
+            "last_tick_age_s": 5.0,
+            "last_signal_at": time.time() - 8,
+            "last_signal_age_s": 8.0,
+            "tick_count": self._tick,
+            "binance_ws": {
+                "connected": True,
+                "reconnect_attempts": 0,
+                "last_connected_at": time.time() - 60,
+                "last_message_age_s": 2.1,
+            },
+            "circuit_breaker_open": False,
+            "kill_switch": False,
+            "paused": self._paused,
+            "mode": "simulation",
+        }
+
+    # Kill switch e circuit breaker (mock)
+    class _MockRisk:
+        kill_switch_triggered = False
+        kill_reason = ""
+        def reset_kill_switch(self): pass
+
+    risk = _MockRisk()
+
+    async def emergency_stop(self):
+        return {"closed_positions": 0, "reason": "Mock — sem posições abertas"}
+
+    def switch_mode(self, live: bool):
+        import config
+        config.SIMULATION_MODE = not live
+
     async def push_live_updates(self):
         """Simula eventos SSE em tempo real."""
         strategies = ["ARBITRAGE", "MOMENTUM", "MARKET_MAKING", "CORRELATION_ARB"]

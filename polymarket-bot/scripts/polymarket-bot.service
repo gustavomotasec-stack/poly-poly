@@ -1,0 +1,48 @@
+# ============================================================
+# Melhoria 6 — Serviço systemd para Linux/Mac
+#
+# Instalação:
+#   sudo cp polymarket-bot.service /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable polymarket-bot
+#   sudo systemctl start polymarket-bot
+#
+# Logs:
+#   sudo journalctl -u polymarket-bot -f
+# ============================================================
+
+[Unit]
+Description=Polymarket Trading Bot
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+
+# ── Ajuste os caminhos abaixo ──────────────────────────────
+User=SEUUSUARIO
+WorkingDirectory=/home/SEUUSUARIO/polymarket-bot
+ExecStart=/home/SEUUSUARIO/polymarket-bot/.venv/bin/python main.py
+# Para modo live: ExecStart=...python main.py --live
+
+# Variáveis sensíveis fora do código
+EnvironmentFile=/home/SEUUSUARIO/polymarket-bot/.env.service
+# .env.service deve conter: POLYMARKET_PK=0x...
+
+# Reiniciar automaticamente após crash
+Restart=always
+RestartSec=10
+StartLimitIntervalSec=120
+StartLimitBurst=5
+
+# Logs via journald
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=polymarket-bot
+
+# Segurança: limitar acesso ao sistema
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

@@ -1,7 +1,7 @@
 /* ─────────────────────────────────────────────
-   Polymarket Bot Dashboard — app.js  v2
-   Strategies: ARB · CORR_ARB · MARKET_MAKING · MOMENTUM · COPY · MEAN_REV
-   Real-time via SSE + REST polling
+   Polymarket Bot Dashboard — app.js  v3
+   Melhorias: circuit breaker, kill switch, health check,
+   toggle simulação↔live, logs, Telegram alerts
 ───────────────────────────────────────────── */
 
 const API = '';
@@ -13,9 +13,11 @@ const MAX_EQUITY_POINTS = 120;
 window.addEventListener('DOMContentLoaded', () => {
   initChart();
   loadConfig();
+  loadMode();
   connectSSE();
   fetchAll();
   setInterval(fetchAll, 15000);
+  setInterval(fetchHealth, 8000);
 });
 
 function fetchAll() {
@@ -43,6 +45,8 @@ function connectSSE() {
       if (type === 'copy_signals')     renderCopySignals(data.signals || []);
       if (type === 'trade_opened')     { fetchTrades(); fetchPositions(); toast(`Trade: ${data.strategy}`, 'green'); }
       if (type === 'daily_limit')      toast('⚠ Limite de perda diária atingido!', 'red');
+      if (type === 'kill_switch')      { toast(`🔴 Kill Switch: ${data.reason}`, 'red'); fetchHealth(); }
+      if (type === 'health_update')    renderHealth(data);
       if (type === 'heartbeat')        setStatus(true);
     } catch (_) {}
   };
@@ -341,13 +345,92 @@ async function togglePause() {
   catch(e) { toast('Erro ao contatar o bot', 'red'); }
 }
 
-function toggleSim(checkbox) {
-  if (!checkbox.checked) {
-    if (!confirm('⚠ Desativar o Modo Simulação?\n\nIsso fará trades com DINHEIRO REAL.\nReinicie o bot com a flag --live.\n\nDeseja continuar?')) {
-      checkbox.checked = true;
-    } else { toast('Reinicie com --live para usar fundos reais', 'red'); }
+// ── Melhoria 4: toggle simulação ↔ live ──────────────────────────────────
+
+async function loadMode() {
+  try {
+    const d = await api('/api/mode');
+    applyMode(!d.simulation);
+  } catch(_) {}
+}
+
+function applyMode(isLive) {
+  const badge  = document.getElementById('modeBadge');
+  const toggle = document.getElementById('simToggle');
+  const banner = document.getElementById('liveBanner');
+  const killBtn = document.getElementById('killBtn');
+
+  if (isLive) {
+    badge.textContent = '⚠ MODO LIVE';
+    badge.className   = 'badge badge-live';
+    if (toggle) toggle.checked = false;
+    if (banner) banner.classList.add('show');
+    if (killBtn) killBtn.style.background = '#f85149';
+  } else {
+    badge.textContent = 'MODO SIMULAÇÃO';
+    badge.className   = 'badge badge-sim';
+    if (toggle) toggle.checked = true;
+    if (banner) banner.classList.remove('show');
+    if (killBtn) killBtn.style.background = '#7d1a1a';
   }
 }
+
+// Chamado pelo toggle — se desmarcar (desativar simulação = ativar live) mostra modal
+function onSimToggleChange(checkbox) {
+  if (!checkbox.checked) {
+    checkbox.checked = true; // reverte visualmente até confirmação
+    openLiveModal();
+  } else {
+    // Voltando para simulação: sem perigo, confirma direto
+    switchToSimulation();
+  }
+}
+
+function openLiveModal() {
+  const el = document.getElementById('liveModal');
+  if (el) { el.classList.add('show'); document.getElementById('liveConfirmInput').value = ''; document.getElementById('liveConfirmInput').focus(); }
+}
+function closeLiveModal() {
+  const el = document.getElementById('liveModal');
+  if (el) el.classList.remove('show');
+}
+
+async function confirmLiveMode() {
+  const input = document.getElementById('liveConfirmInput');
+  const confirmation = input ? input.value.trim() : '';
+  try {
+    const res = await fetch(API + '/api/mode/toggle', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ target: 'live', confirmation }),
+    });
+    if (!res.ok) {
+      const err = await res.json();
+      toast('Erro: ' + (err.detail || res.status), 'red');
+      return;
+    }
+    closeLiveModal();
+    applyMode(true);
+    const toggle = document.getElementById('simToggle');
+    if (toggle) toggle.checked = false;
+    toast('⚠ Modo LIVE ativado!', 'red');
+  } catch(e) { toast('Erro ao contatar o bot', 'red'); }
+}
+
+async function switchToSimulation() {
+  try {
+    await fetch(API + '/api/mode/toggle', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ target: 'simulation' }),
+    });
+    applyMode(false);
+    toast('Voltou para Modo Simulação', 'yellow');
+  } catch(e) { toast('Erro ao contatar o bot', 'red'); }
+}
+
+// Mantém compatibilidade com toggleSim legado
+function toggleSim(checkbox) { onSimToggleChange(checkbox); }
 
 async function updateMaxSize(val) {
   const v = parseFloat(val);
@@ -369,6 +452,102 @@ async function updateMaxSize(val) {
     localStorage.setItem('maxSize', v);
     toast(`Tamanho máx. salvo: $${v.toFixed(2)}`, 'blue');
   }
+}
+
+// ── Melhoria 5: kill switch ───────────────────────────────────────────────
+
+async function triggerKillSwitch() {
+  if (!confirm('🔴 PARADA DE EMERGÊNCIA\n\nIsso fechará TODAS as posições abertas imediatamente.\n\nConfirma?')) return;
+  try {
+    const res = await fetch(API + '/api/kill-switch', { method: 'POST' });
+    const data = await res.json();
+    toast(`Kill switch: ${data.closed_positions} posição(ões) fechada(s)`, 'red');
+    document.getElementById('resetKillBtn').style.display = 'block';
+    document.getElementById('killBtn').style.display = 'none';
+    fetchPositions();
+    fetchMetrics();
+  } catch(e) { toast('Erro ao acionar kill switch', 'red'); }
+}
+
+async function resetKillSwitch() {
+  try {
+    await fetch(API + '/api/kill-switch/reset', { method: 'POST' });
+    toast('Kill switch resetado — trading pode ser retomado', 'green');
+    document.getElementById('resetKillBtn').style.display = 'none';
+    document.getElementById('killBtn').style.display = 'block';
+  } catch(e) { toast('Erro ao resetar kill switch', 'red'); }
+}
+
+async function updateMinBalance(val) {
+  const v = parseFloat(val);
+  if (isNaN(v) || v < 0) { toast('Valor inválido', 'red'); return; }
+  try {
+    await fetch(API + '/api/config', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ minimum_balance_usdc: v }),
+    });
+    toast(`Saldo mínimo: $${v.toFixed(2)}`, 'green');
+  } catch(e) { toast(`Saldo mínimo salvo: $${v.toFixed(2)}`, 'blue'); }
+}
+
+// ── Melhoria 9: health check ──────────────────────────────────────────────
+
+async function fetchHealth() {
+  try { renderHealth(await api('/api/health')); } catch(_) {}
+}
+
+function renderHealth(h) {
+  if (!h) return;
+
+  // Binance WS
+  const ws = h.binance_ws || {};
+  const wsEl = document.getElementById('hBinance');
+  if (wsEl) {
+    const age = ws.last_message_age_s;
+    const ok = ws.connected && (age == null || age < 30);
+    wsEl.textContent = ok ? 'Conectado' : ws.connected ? `Atrasado ${age}s` : 'Offline';
+    wsEl.className = 'health-value ' + (ok ? 'h-ok' : 'h-err');
+  }
+
+  // Último sinal
+  const sigEl = document.getElementById('hSignal');
+  if (sigEl) {
+    const age = h.last_signal_age_s;
+    sigEl.textContent = age != null ? `${age}s atrás` : '—';
+    sigEl.className = 'health-value ' + (age == null ? '' : age < 30 ? 'h-ok' : age < 60 ? 'h-warn' : 'h-err');
+  }
+
+  // Último tick
+  const tickEl = document.getElementById('hTick');
+  if (tickEl) {
+    const age = h.last_tick_age_s;
+    tickEl.textContent = age != null ? `${age}s atrás` : '—';
+    tickEl.className = 'health-value ' + (age == null ? '' : age < 20 ? 'h-ok' : age < 60 ? 'h-warn' : 'h-err');
+  }
+
+  // Circuit breaker
+  const cbEl = document.getElementById('hCircuit');
+  if (cbEl) {
+    cbEl.textContent = h.circuit_breaker_open ? 'ABERTO' : 'Fechado';
+    cbEl.className = 'health-value ' + (h.circuit_breaker_open ? 'h-err' : 'h-ok');
+  }
+
+  // Kill switch
+  const ksEl = document.getElementById('hKill');
+  if (ksEl) {
+    ksEl.textContent = h.kill_switch ? 'ATIVO' : 'Inativo';
+    ksEl.className = 'health-value ' + (h.kill_switch ? 'h-err' : 'h-ok');
+    // Atualiza botões de kill switch
+    const killBtn = document.getElementById('killBtn');
+    const resetBtn = document.getElementById('resetKillBtn');
+    if (killBtn) killBtn.style.display = h.kill_switch ? 'none' : 'block';
+    if (resetBtn) resetBtn.style.display = h.kill_switch ? 'block' : 'none';
+  }
+
+  // Total de loops
+  const loopEl = document.getElementById('hLoops');
+  if (loopEl) loopEl.textContent = h.tick_count ?? '—';
 }
 
 // ── Helpers ───────────────────────────────────
