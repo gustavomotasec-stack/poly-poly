@@ -45,38 +45,43 @@ class MockEngine:
             "Will ETH price increase in the next 5 minutes?",
             "Will BTC reach $71,000 before 4 PM?",
         ]
-        self._bankroll = 100.0
+        # Salva o bankroll inicial no banco (fonte de verdade para compute_metrics)
+        initial = db.get_config("initial_bankroll")
+        if initial is None:
+            db.set_config("initial_bankroll", 100.0)
+
         for i in range(20):
-            strategy = random.choice(strategies)
-            question = random.choice(questions)
+            strategy  = random.choice(strategies)
+            question  = random.choice(questions)
             direction = random.choice(["YES", "NO", "BOTH"])
-            # Tamanho escala com o limite configurado (40%-100% do máximo)
-            size = round(random.uniform(0.4, 1.0) * config.MAX_POSITION_SIZE, 3)
+            size  = round(random.uniform(0.4, 1.0) * config.MAX_POSITION_SIZE, 3)
             entry = round(random.uniform(0.35, 0.65), 3)
-            won = random.random() > 0.42
+            won   = random.random() > 0.42
             exit_p = round(entry + random.uniform(0.05, 0.25) if won else entry - random.uniform(0.05, 0.2), 3)
-            pnl = round(size * (exit_p / entry - 1), 4)
-            self._bankroll += pnl
+            pnl   = round(size * (exit_p / entry - 1), 4)
+            # Não acumula em self._bankroll — o banco calcula tudo
             db.save_trade({
-                "timestamp": datetime.now(timezone.utc).isoformat(),
-                "market_id": f"mock-market-{i}",
-                "question": question,
-                "direction": direction,
-                "size": size,
+                "timestamp":   datetime.now(timezone.utc).isoformat(),
+                "market_id":   f"mock-market-{i}",
+                "question":    question,
+                "direction":   direction,
+                "size":        size,
                 "entry_price": entry,
-                "exit_price": exit_p,
-                "pnl": pnl,
-                "strategy": strategy,
-                "simulated": True,
-                "status": "closed",
+                "exit_price":  exit_p,
+                "pnl":         pnl,
+                "strategy":    strategy,
+                "simulated":   True,
+                "status":      "closed",
             })
-            db.save_metrics({
-                "timestamp": datetime.now(timezone.utc).isoformat(),
-                "bankroll": self._bankroll,
-                "total_pnl": self._bankroll - 100.0,
-                "win_rate": 55.0,
-                "active_positions": 0,
-            })
+        # Salva snapshot único após o seed (sem hardcode de win_rate)
+        m = db.compute_metrics()
+        db.save_metrics({
+            "timestamp":        datetime.now(timezone.utc).isoformat(),
+            "bankroll":         m["bankroll"],
+            "total_pnl":        m["total_pnl"],
+            "win_rate":         m["win_rate"],
+            "active_positions": 0,
+        })
 
     def pause(self):
         self._paused = True
@@ -91,52 +96,37 @@ class MockEngine:
         return await self._sse_queue.get()
 
     def get_metrics(self):
-        # Calcula tudo dinamicamente a partir do SQLite — sem hardcode
+        # Bug 2: db.compute_metrics() é a fonte única — bankroll = initial + pnl, sempre.
+        m = db.compute_metrics()
+        m["sharpe_ratio"]     = self._calc_sharpe()
+        m["max_drawdown_pct"] = self._calc_drawdown()
+        m["avg_trade_pnl"]    = round(m["total_pnl"] / m["total_trades"], 4) if m["total_trades"] else 0.0
+        m["risk"]   = {"in_cooldown": False, "consecutive_losses": 0}
+        m["mode"]   = "simulation"
+        m["paused"] = self._paused
+        return m
+
+    def _calc_sharpe(self) -> float:
+        import math
+        trades = db.get_trades(limit=500)
+        pnls = [t["pnl"] for t in trades if t.get("status") == "closed" and t.get("pnl") is not None]
+        if len(pnls) < 2:
+            return 0.0
+        avg = sum(pnls) / len(pnls)
+        std = math.sqrt(sum((p - avg) ** 2 for p in pnls) / len(pnls))
+        return round((avg / std * math.sqrt(252)), 3) if std > 0 else 0.0
+
+    def _calc_drawdown(self) -> float:
+        initial = db.get_config("initial_bankroll", self._initial)
         trades = db.get_trades(limit=500)
         closed = [t for t in trades if t.get("status") == "closed" and t.get("pnl") is not None]
-        wins   = [t for t in closed if t["pnl"] > 0]
-        pnls   = [t["pnl"] for t in closed]
-
-        win_rate      = round(len(wins) / len(closed) * 100, 1) if closed else 0.0
-        total_pnl     = round(sum(pnls), 4)
-        avg_trade_pnl = round(total_pnl / len(pnls), 4) if pnls else 0.0
-
-        # Sharpe simplificado
-        import math
-        sharpe = 0.0
-        if len(pnls) > 1:
-            avg = sum(pnls) / len(pnls)
-            std = math.sqrt(sum((p - avg) ** 2 for p in pnls) / len(pnls))
-            sharpe = round((avg / std * math.sqrt(252)), 3) if std > 0 else 0.0
-
-        # Max drawdown
-        peak, running, max_dd = self._initial, self._initial, 0.0
+        peak, running, max_dd = initial, initial, 0.0
         for t in closed:
             running += t["pnl"]
             peak = max(peak, running)
             dd = (peak - running) / peak if peak > 0 else 0
             max_dd = max(max_dd, dd)
-
-        from datetime import date
-        today = date.today().isoformat()
-        today_trades = sum(1 for t in trades if t.get("timestamp", "").startswith(today))
-
-        return {
-            "bankroll":         round(self._bankroll, 2),
-            "initial_bankroll": self._initial,
-            "total_pnl":        total_pnl,
-            "total_pnl_pct":    round(total_pnl / self._initial * 100, 2) if self._initial else 0,
-            "win_rate":         win_rate,
-            "total_trades":     len(closed),
-            "open_trades":      len([t for t in trades if t.get("status") == "open"]),
-            "sharpe_ratio":     sharpe,
-            "max_drawdown_pct": round(max_dd * 100, 2),
-            "avg_trade_pnl":    avg_trade_pnl,
-            "today_trades":     today_trades,
-            "risk":  {"in_cooldown": False, "consecutive_losses": 0},
-            "mode":  "simulation",
-            "paused": self._paused,
-        }
+        return round(max_dd * 100, 2)
 
     def get_signals(self):
         # Lê os últimos sinais reais do SQLite
@@ -217,7 +207,8 @@ class MockEngine:
             exit_price = round(entry + pnl / config.MAX_POSITION_SIZE, 3)
             size       = round(random.uniform(0.4, 1.0) * config.MAX_POSITION_SIZE, 3)
 
-            self._bankroll += pnl
+            # Bug 2: não atualiza self._bankroll — o banco é a fonte de verdade.
+            # db.compute_metrics() calcula bankroll = initial + sum(pnl) automaticamente.
 
             trade = {
                 "market_id":   f"live-{self._tick}",

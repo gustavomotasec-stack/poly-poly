@@ -32,6 +32,21 @@ _engine = None
 def set_engine(engine):
     global _engine
     _engine = engine
+    _apply_persisted_config()
+
+
+def _apply_persisted_config():
+    """Aplica configurações salvas no banco ao iniciar o servidor."""
+    try:
+        db.init_db()
+        saved_max = db.get_config("max_position_size")
+        if saved_max is not None:
+            config.MAX_POSITION_SIZE = float(saved_max)
+        saved_min = db.get_config("minimum_balance_usdc")
+        if saved_min is not None:
+            config.MINIMUM_BALANCE_USDC = float(saved_min)
+    except Exception:
+        pass
 
 
 # ── Métricas ──────────────────────────────────────────────────────────────
@@ -181,33 +196,49 @@ async def get_health():
 
 @app.get("/api/config")
 async def get_config():
+    """
+    Lê configurações do SQLite (fonte de verdade persistente).
+    Fallback para config.py se ainda não foram salvas no banco.
+    """
     return {
-        "max_position_size": config.MAX_POSITION_SIZE,
+        "max_position_size":      db.get_config("max_position_size",      config.MAX_POSITION_SIZE),
+        "minimum_balance_usdc":   db.get_config("minimum_balance_usdc",   config.MINIMUM_BALANCE_USDC),
         "max_simultaneous_positions": config.MAX_SIMULTANEOUS_POSITIONS,
-        "stop_loss_pct": config.STOP_LOSS_PCT,
-        "min_edge": config.MIN_EDGE,
-        "minimum_balance_usdc": config.MINIMUM_BALANCE_USDC,
+        "stop_loss_pct":          config.STOP_LOSS_PCT,
+        "min_edge":               config.MIN_EDGE,
         "circuit_breaker_errors": config.CIRCUIT_BREAKER_API_ERRORS,
     }
 
 
 @app.post("/api/config")
 async def update_config(payload: dict):
+    """
+    Salva configurações no SQLite E aplica em memória imediatamente.
+    Ao reiniciar o servidor, GET /api/config lê do banco e restaura os valores.
+    """
+    updated = {}
+
     if "max_position_size" in payload:
         try:
             val = float(payload["max_position_size"])
             if 0 < val <= 1000:
                 config.MAX_POSITION_SIZE = val
+                db.set_config("max_position_size", val)
+                updated["max_position_size"] = val
         except (TypeError, ValueError):
             pass
+
     if "minimum_balance_usdc" in payload:
         try:
             val = float(payload["minimum_balance_usdc"])
             if val >= 0:
                 config.MINIMUM_BALANCE_USDC = val
+                db.set_config("minimum_balance_usdc", val)
+                updated["minimum_balance_usdc"] = val
         except (TypeError, ValueError):
             pass
-    return {"status": "updated", "max_position_size": config.MAX_POSITION_SIZE}
+
+    return {"status": "updated", **updated}
 
 
 # ── Backtest ──────────────────────────────────────────────────────────────

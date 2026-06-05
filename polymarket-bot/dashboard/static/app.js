@@ -57,34 +57,24 @@ function setStatus(online) {
   document.getElementById('statusLabel').textContent = online ? 'Online' : 'Offline';
 }
 
-// ── Config (tamanho máx. por trade) ───────────
+// ── Config — fonte única no backend (SQLite) ─────────────────────────────
+// O dashboard nunca define valores por conta própria.
+// Apenas lê o backend e exibe. Ao salvar, grava no backend.
+// Sem localStorage — o banco é a fonte de verdade.
 
 async function loadConfig() {
-  const saved = localStorage.getItem('maxSize');
-  let val = null;
+  try {
+    const cfg = await api('/api/config');
+    if (!cfg) return;
 
-  if (saved != null) {
-    // Valor salvo pelo usuário é a fonte da verdade — reaplica no backend
-    // (o bot reinicia com o padrão da config, então reenviamos aqui)
-    val = parseFloat(saved);
-    try {
-      await fetch(API + '/api/config', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ max_position_size: val }),
-      });
-    } catch (_) {}
-  } else {
-    try {
-      const cfg = await api('/api/config');
-      if (cfg && cfg.max_position_size != null) val = parseFloat(cfg.max_position_size);
-    } catch (_) {}
-  }
+    const maxSizeInput = document.getElementById('maxSize');
+    if (maxSizeInput && cfg.max_position_size != null)
+      maxSizeInput.value = parseFloat(cfg.max_position_size);
 
-  if (val != null) {
-    const input = document.getElementById('maxSize');
-    if (input) input.value = val;
-  }
+    const minBalInput = document.getElementById('minBalance');
+    if (minBalInput && cfg.minimum_balance_usdc != null)
+      minBalInput.value = parseFloat(cfg.minimum_balance_usdc);
+  } catch (_) {}
 }
 
 // ── Metrics ───────────────────────────────────
